@@ -4,7 +4,7 @@ package com.pegasagro.gpslogreader.utilities;
 import java.io.*;
 import java.util.LinkedList;
 import java.util.List;
-
+import com.pegasagro.gpslogreader.exceptions.RecordNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,7 +17,7 @@ public class GPSLogsParseAndCreateDD {
 	
 	private static Logger LOGGER = LoggerFactory.getLogger(GPSLogsParseAndCreateDD.class);
 	
-	private static final double EARTH_RADIUS = 6371.0;
+	public static final double EARTH_RADIUS = 6371.0;
 
     public static double readFileAndProcess(String filePath) {
        List<Coordinates> CoordinateLists = new LinkedList<>();
@@ -27,6 +27,7 @@ public class GPSLogsParseAndCreateDD {
                 if(line.startsWith("$GPGGA")) {
                     Coordinates coordinates = processLine(line);
                     if (coordinates != null) {
+                        //saving coordinates into a list to calculate distance and make map
                         CoordinateLists.add(coordinates);
                     }
                 }
@@ -34,52 +35,22 @@ public class GPSLogsParseAndCreateDD {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        String filePath2 = "src\\main\\resources\\static\\js\\script.js";
-        // Process each string and write to file
-        
+        LOGGER.info("no of records generated into file: {} " + CoordinateLists.size());
+        LOGGER.info("Calculating distance from records");
         double distanceTravelled = 0;
-        
-        if(CoordinateLists.size()>=2) {
-        for(int i = 0; i< CoordinateLists.size()-1;i++) {
-        	distanceTravelled = distanceTravelled 
-        			+ calculateDistanceBetweenToCoordinates(CoordinateLists.get(i),CoordinateLists.get(i+1));
-        }}
-        
-        
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath2))) {
-                writer.write("""
-                        let config = {
-                          minZoom: 7,
-                          maxZoom: 18,
-                        };          
-                        const zoom = 18;
-                        """);
-                writer.write("const lat =" + CoordinateLists.get(0).getLongitute() + ";");
-                writer.newLine();
-                writer.write("const lng = " + CoordinateLists.get(0).getLatitude() + ";");
-                writer.newLine();
-                writer.write("var polylinePoints = [" + CoordinateLists.get(0));
-                writer.newLine();
-                for (Coordinates c : CoordinateLists) {
-                    writer.write("," + c.toString());
-                    writer.newLine(); // Write each processed string on a new line
+        if (CoordinateLists.size() >= 2) {
+            for (int i = 0; i < CoordinateLists.size() - 1; i++) {
+                distanceTravelled = distanceTravelled
+                        + CoordinateLists.get(i).distanceToCoordinate(CoordinateLists.get(i + 1));
+                if(i%10000==0){
+                    LOGGER.debug("{} records processed yet and distance covered {}" , i,distanceTravelled );
                 }
-
-                writer.write("""
-                         ];
-                        const map = L.map("map", config).setView([lat, lng], zoom);
-                        var polyline = L.polyline(polylinePoints).addTo(map);
-                        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                          attribution:
-                            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                        }).addTo(map);
-                        """);
-            writer.newLine();
-            LOGGER.info("No of real records in the file: " + CoordinateLists.size());
-        } catch (IOException e) {
-            e.printStackTrace();
+            }
+        }else{
+            LOGGER.info("Not Enough records to calculate distance ");
+            throw new RecordNotFoundException("Not enough records to calculate distance");
         }
+        writeJSFileForMap(CoordinateLists);
         return distanceTravelled;
     }
 
@@ -118,31 +89,40 @@ public class GPSLogsParseAndCreateDD {
         }
         return decimalDegrees;
     }
-    
-    public static double calculateDistanceBetweenToCoordinates(Coordinates a, Coordinates b) {
 
-    	// put the latitude and longitude from the coordinates
-    	double lat1=a.getLatitude();
-    	double lon1=a.getLongitute();
-    	double lat2=b.getLatitude();
-    	double lon2=b.getLongitute();
-    	
-    	// Convert degrees to radians
-    	double lat1Rad = Math.toRadians(lat1);
-    	double lon1Rad = Math.toRadians(lon1);
-    	double lat2Rad = Math.toRadians(lat2);
-    	double lon2Rad = Math.toRadians(lon2);
+    public static void writeJSFileForMap(List<Coordinates> CoordinateLists) {
+        String generatedJSFilePath = "src\\main\\resources\\static\\js\\script.js";
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(generatedJSFilePath))) {
+            writer.write("""
+                    let config = {
+                      minZoom: 7,
+                      maxZoom: 18,
+                    };          
+                    const zoom = 18;
+                    """);
+            writer.write("const lat =" + CoordinateLists.get(0).getLongitute() + ";");
+            writer.newLine();
+            writer.write("const lng = " + CoordinateLists.get(0).getLatitude() + ";");
+            writer.newLine();
+            writer.write("var polylinePoints = [" + CoordinateLists.get(0));
+            writer.newLine();
+            for (Coordinates c : CoordinateLists) {
+                writer.write("," + c.toString());
+                writer.newLine(); // Write each processed string on a new line
+            }
 
-    	// Haversine formula
-    	double deltaLat = lat2Rad - lat1Rad;
-    	double deltaLon = lon2Rad - lon1Rad;
-    	double ab = Math.pow(Math.sin(deltaLat / 2), 2)
-    	+ Math.cos(lat1Rad) * Math.cos(lat2Rad)
-    	* Math.pow(Math.sin(deltaLon / 2), 2);
-    	double c = 2 * Math.atan2(Math.sqrt(ab), Math.sqrt(1 - ab));
-
-    	return EARTH_RADIUS * c;
-    	}
-
-
+            writer.write("""
+                     ];
+                    const map = L.map("map", config).setView([lat, lng], zoom);
+                    var polyline = L.polyline(polylinePoints).addTo(map);
+                    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                      attribution:
+                        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    }).addTo(map);
+                    """);
+            writer.newLine();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 }
