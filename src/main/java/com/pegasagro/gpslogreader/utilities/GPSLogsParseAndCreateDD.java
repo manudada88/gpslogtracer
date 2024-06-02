@@ -4,6 +4,7 @@ package com.pegasagro.gpslogreader.utilities;
 import java.io.*;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.stream.IntStream;
 import com.pegasagro.gpslogreader.exceptions.RecordNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,17 +36,14 @@ public class GPSLogsParseAndCreateDD {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        LOGGER.info("no of records generated into file: {} " + CoordinateLists.size());
+        LOGGER.info("no of records generated into file: {} ", CoordinateLists.size());
         LOGGER.info("Calculating distance from records");
         double distanceTravelled = 0;
         if (CoordinateLists.size() >= 2) {
-            for (int i = 0; i < CoordinateLists.size() - 1; i++) {
-                distanceTravelled = distanceTravelled
-                        + CoordinateLists.get(i).distanceToCoordinate(CoordinateLists.get(i + 1));
-                if(i%10000==0){
-                    LOGGER.debug("{} records processed yet and distance covered {}" , i,distanceTravelled );
-                }
-            }
+            distanceTravelled = IntStream.range(0, CoordinateLists.size() - 1).
+                    mapToDouble(i-> CoordinateLists.get(i)
+                            .distanceToCoordinate(CoordinateLists.get(i+1))).parallel()
+                    .reduce(0, Double::sum);
         }else{
             LOGGER.info("Not Enough records to calculate distance ");
             throw new RecordNotFoundException("Not enough records to calculate distance");
